@@ -1,0 +1,44 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "cloudflare-ai-worker",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-09-27",
+	"workers_dev": false,
+	// Environment variables (non-sensitive)
+	"vars": {
+		// Add any non-sensitive variables here
+		// "MODEL_MAPPER": "{\"gpt-4\": \"claude-3-opus\"}"
+	},
+	// Secrets - set via CLI: wrangler secret put <KEY>
+	// wrangler secret put ACCESS_TOKEN
+	// wrangler secret put CLOUDFLARE_API_TOKEN
+	// wrangler secret put CLOUDFLARE_ACCOUNT_ID
+	// R2 Bucket binding
+	"r2_buckets": [
+		{
+			"binding": "IMAGE_BUCKET",
+			"bucket_name": "ai-images",
+			"preview_bucket_name": "ai-images-preview"
+		}
+	],
+	// Workers AI binding
+	"ai": {
+		"binding": "AI"
+	},
+	// Observability
+	"observability": {
+		"enabled": true
+	},
+	// Environment-specific configurations
+	"env": {
+		"development": {
+			"name": "cloudflare-ai-worker-dev"
+		},
+		"production": {
+			"name": "cloudflare-ai-worker"
+		}
+	},
+	// Routes intentionally omitted.
+	// Configure your own routes or use workers.dev
+	"preview_urls": false
+}
