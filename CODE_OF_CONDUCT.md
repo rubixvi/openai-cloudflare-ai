@@ -62,7 +62,7 @@ Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at:
 
 - X: [@rubixvi](https://x.com/rubixvi)
-- Website: [Contact Form](https://www.rubixstudios.com.au)
+- Website: [Contact Form](https://rubixstudios.com.au)
 - Facebook: [rubixvi](https://www.facebook.com/rubixvi/)
 
 All complaints will be reviewed and investigated promptly and fairly.
@@ -131,5 +131,5 @@ For answers to common questions about this code of conduct, see the FAQ at [http
 
 ## Contact
 
-Rubix Studios Pty. Ltd.  
-Website: [https://www.rubixstudios.com.au](https://www.rubixstudios.com.au)
+Rubix Studios  
+Website: [https://rubixstudios.com.au](https://rubixstudios.com.au)
