@@ -13,6 +13,6 @@
 		"wrangler": "^4.112.0"
 	},
 	"dependencies": {
-		"@cloudflare/workers-types": "^5.20260717.1"
+		"@cloudflare/workers-types": "^5.20260719.1"
 	}
 }
