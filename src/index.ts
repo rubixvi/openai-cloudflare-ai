@@ -1,106 +1,138 @@
-import type { ExecutionContext } from "@cloudflare/workers-types";
-import { routes } from "./routes/index";
+import { routes } from './routes/index'
+import { type Env } from './types'
+import { ApiError, errorResponse } from './utils/errors'
 
-export interface Env {
-	ACCESS_TOKEN: string;
-	CLOUDFLARE_API_TOKEN: string;
-	CLOUDFLARE_ACCOUNT_ID: string;
-	MODEL_MAPPER?: Record<string, string>;
-	IMAGE_BUCKET: R2Bucket;
-	AI: Ai;
+export type { Env } from './types'
+
+async function authenticate(request: Request, env: Env): Promise<void> {
+  if (!env.ACCESS_TOKEN?.trim()) {
+    throw new ApiError(
+      503,
+      'API authentication is not configured.',
+      'server_error',
+      'authentication_not_configured'
+    )
+  }
+
+  const token = /^Bearer[\t ]+([^\s]+)$/i.exec(
+    request.headers.get('Authorization') ?? ''
+  )?.[1]
+
+  if (!token || token.length > 8192) {
+    throw new ApiError(
+      401,
+      'Provide a valid Bearer token.',
+      'authentication_error',
+      'invalid_api_key',
+      null,
+      { 'WWW-Authenticate': 'Bearer' }
+    )
+  }
+
+  const encoder = new TextEncoder()
+  const [actual, expected] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(token)),
+    crypto.subtle.digest('SHA-256', encoder.encode(env.ACCESS_TOKEN)),
+  ])
+  const left = new DataView(actual)
+  const right = new DataView(expected)
+  let difference = 0
+
+  for (let offset = 0; offset < left.byteLength; offset += 4) {
+    difference |= left.getUint32(offset) ^ right.getUint32(offset)
+  }
+
+  if (difference !== 0) {
+    throw new ApiError(
+      401,
+      'The API token is invalid.',
+      'authentication_error',
+      'invalid_api_key',
+      null,
+      { 'WWW-Authenticate': 'Bearer' }
+    )
+  }
 }
 
-function authenticate(request: Request, env: Env): Response | null {
-	const header = request.headers.get("Authorization");
-	if (!header) {
-		return jsonError(401, "Unauthorized", "AUTH_NO_HEADER");
-	}
+function finalize(response: Response, request: Request, requestId: string): Response {
+  const headers = new Headers(response.headers)
 
-	const [scheme, token] = header.split(" ");
-	if (scheme !== "Bearer" || token !== env.ACCESS_TOKEN) {
-		return jsonError(403, "Forbidden", "AUTH_INVALID_TOKEN");
-	}
+  headers.set('Access-Control-Allow-Origin', '*')
+  headers.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,OPTIONS')
+  headers.set('Access-Control-Allow-Headers', 'Authorization,Content-Type,If-None-Match')
+  headers.set('Access-Control-Expose-Headers', 'X-Request-Id,Retry-After,ETag')
+  headers.set('X-Request-Id', requestId)
+  headers.set('X-Content-Type-Options', 'nosniff')
 
-	return null;
-}
+  if (!headers.has('Cache-Control')) {
+    headers.set('Cache-Control', 'no-store')
+  }
 
-function jsonError(status: number, error: string, code?: string): Response {
-	return new Response(JSON.stringify({ error, code }), {
-		status,
-		headers: { "Content-Type": "application/json" },
-	});
-}
+  if (request.method === 'HEAD' && response.body) {
+    void response.body.cancel().catch(() => {})
+  }
 
-function replacePath(pathname: string): string {
-	return pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
-}
-
-function withCors(response: Response): Response {
-	const headers = new Headers(response.headers);
-
-	headers.set("Access-Control-Allow-Origin", "*");
-	headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-	headers.set("Access-Control-Allow-Headers", "Authorization,Content-Type");
-
-	return new Response(response.body, {
-		status: response.status,
-		statusText: response.statusText,
-		headers,
-	});
+  return new Response(request.method === 'HEAD' ? null : response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
 }
 
 export default {
-	async fetch(
-		request: Request,
-		env: Env,
-		ctx: ExecutionContext,
-	): Promise<Response> {
-		try {
-			if (request.method === "OPTIONS") {
-				return withCors(new Response(null, { status: 204 }));
-			}
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const requestId = crypto.randomUUID()
+    let response: Response
 
-			const url = new URL(request.url);
+    try {
+      if (request.method === 'OPTIONS') {
+        return finalize(new Response(null, { status: 204 }), request, requestId)
+      }
 
-			const normalizedPath = replacePath(url.pathname);
+      const path =
+        new URL(request.url).pathname.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/'
+      const matching = routes.filter((route) => route.path.test(path))
 
-			if (normalizedPath !== url.pathname) {
-				return withCors(
-					new Response(null, {
-						status: 308,
-						headers: {
-							Location: normalizedPath + url.search,
-						},
-					}),
-				);
-			}
+      if (!matching.length) {
+        throw new ApiError(
+          404,
+          'The requested endpoint does not exist.',
+          'invalid_request_error',
+          'not_found'
+        )
+      }
 
-			const route = routes.find(
-				(r) => r.method === request.method && r.path.test(normalizedPath),
-			);
+      const method = request.method === 'HEAD' ? 'GET' : request.method
+      const route = matching.find((candidate) => candidate.method === method)
 
-			if (!route) {
-				return withCors(new Response("Not Found", { status: 404 }));
-			}
+      if (!route) {
+        const methods = new Set(matching.map((candidate) => candidate.method as string))
 
-			if (route.auth) {
-				const authError = authenticate(request, env);
-				if (authError) return withCors(authError);
-			}
+        if (methods.has('GET')) {
+          methods.add('HEAD')
+        }
 
-			const response = await route.handler(request, env, ctx);
-			return withCors(response);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			return withCors(
-				new Response(
-					JSON.stringify({ error: "Internal Server Error", message }),
-					{
-						status: 500,
-						headers: { "Content-Type": "application/json" },
-					},
-				),
-			);
-		}
-	},
-};
+        methods.add('OPTIONS')
+
+        throw new ApiError(
+          405,
+          'This HTTP method is not allowed.',
+          'invalid_request_error',
+          'method_not_allowed',
+          null,
+          { Allow: [...methods].join(', ') }
+        )
+      }
+
+      if (route.auth) {
+        await authenticate(request, env)
+      }
+
+      response = await route.handler(request, env, ctx)
+    } catch (error) {
+      response = errorResponse(error)
+    }
+
+    return finalize(response, request, requestId)
+  },
+}

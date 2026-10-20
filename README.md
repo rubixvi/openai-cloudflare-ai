@@ -2,128 +2,106 @@
 
 ## Overview
 
-This implementation delivers a pragmatic, OpenAI-compatible API surface deployed on Cloudflare Workers AI. It enables existing tools, SDKs, and automation platforms to interact with Workers AI models without requiring application-level refactoring.
+This implementation provides an OpenAI-compatible API deployed on Cloudflare Workers AI. It enables existing tools, SDKs, and automation platforms to interact with Workers AI models through familiar API interfaces.
 
-The design objective is to support experimentation, migration paths, and cost-managed workloads by maintaining alignment with established OpenAI client integrations while allowing the use of smaller or alternative models.
+The design supports experimentation, migration, and cost-managed workloads while maintaining compatibility with established OpenAI client integrations.
 
 ---
 
 ## Purpose
 
-The project addresses a growing operational reality where many production use cases do not require premium, large-scale language models to achieve acceptable outcomes. Despite this, many systems remain tightly coupled to the OpenAI API interface, which creates friction when evaluating alternative providers.
+Many production workloads can achieve suitable outcomes using smaller or alternative models. Systems built around the OpenAI API can make evaluating these options difficult when integrations depend on a specific interface.
 
-This solution resolves that constraint by supporting the following outcomes:
-
-- Exposing OpenAI-compatible HTTP endpoints
-- Operating entirely within Cloudflare Workers
-- Delegating inference to Workers AI models
-- Preserving upstream client compatibility
-
-Cloudflare Workers provide a globally distributed execution layer with low-latency characteristics. This makes the platform suitable for API mediation and AI request routing while maintaining predictable operational behaviour.
+This project exposes OpenAI-compatible HTTP endpoints through Cloudflare Workers and delegates inference to Workers AI models. It provides a consistent integration layer for evaluating and operating alternative models.
 
 ---
 
 ## Scope
 
-The implementation prioritises API compatibility rather than full behavioural parity with OpenAI services. It is appropriate for development workflows, testing environments, internal platforms, and limited production scenarios where strict equivalence is not a regulatory or contractual requirement.
+The implementation prioritises API compatibility over full behavioural parity with OpenAI services. It supports development workflows, internal platforms, automation, and controlled production deployments where Workers AI capabilities meet the workload requirements.
 
-Model support and capabilities evolve in line with Workers AI availability. Functionality should be evaluated against current Workers AI constraints before inclusion in critical execution paths.
+Model support and functionality depend on current Workers AI availability and account access.
 
 ---
 
-## Supported APIs
+## Features
 
-The following OpenAI-style endpoints are implemented or partially implemented using Workers AI models.
+| Feature    | Capabilities                                                            |
+| ---------- | ----------------------------------------------------------------------- |
+| Text       | Single-prompt text completions with streaming.                          |
+| Chat       | Chat completions with native streaming and model-supported tool calls.  |
+| Responses  | Non-streaming GPT-OSS responses through the native compatible endpoint. |
+| Audio      | Whisper transcription, direct English translation, and subtitle output. |
+| Speech     | Speech generation using supported Aura models and speaker voices.       |
+| Embeddings | Batched text embeddings with float or base64 output.                    |
+| Images     | Image generation with URL or base64 output and R2-backed retrieval.     |
+| Models     | Model discovery, configured aliases, and individual model retrieval.    |
 
-### Text and Chat
-
-- Completions
-- Chat Completions
-- Responses (modern OpenAI API)
-
-### Audio
-
-- Audio Transcription
-- Audio Translation
-
-Translation is performed by combining speech recognition, language detection, and translation models available on Workers AI.
-
-### Embeddings
-
-- Text Embeddings
-
-### Images
-
-- Image Generation
-- Image Retrieval via R2-backed storage
+Audio translation uses Whisper's translation task directly. Chat, embeddings, and Responses use Cloudflare's native OpenAI-compatible endpoints where supported.
 
 ---
 
 ## Compatibility
 
-- Endpoints are compatible with common OpenAI SDKs and tools.
-- Both versioned (`/v1/...`) and unversioned routes are supported where applicable.
+- Both versioned (`/v1/...`) and unversioned routes are supported.
 - Streaming responses follow OpenAI Server-Sent Events conventions.
-- Model identifiers can be mapped via configuration to underlying Workers AI models.
+- Model identifiers can be mapped to Workers AI models through configuration.
+- Requests are validated, and errors use a consistent OpenAI-style structure.
+- Responses supports the Workers AI GPT-OSS models with streaming disabled.
 
-This project does not aim to replicate OpenAI-specific features that are not supported by Workers AI.
+Compatibility depends on the selected model and the features used by each client. OpenAI-specific services and unsupported model capabilities are outside the project's scope.
 
 ---
 
 ## Architecture
 
-- Cloudflare Workers handle routing, authentication, and response shaping
-- Workers AI performs inference
-- R2 is used for generated image storage and retrieval
-- Secrets are managed via Cloudflare environment bindings
-- No secrets are stored in source control
+- Cloudflare Workers handle routing, authentication, validation, and API compatibility.
+- Workers AI performs inference through native endpoints and the AI binding.
+- R2 stores generated images when URL output is requested.
+- Secrets are supplied through Cloudflare environment bindings.
 
 ---
 
 ## Deployment
 
-This repository is designed to be deployed using Wrangler.
+This repository is designed for deployment using Wrangler.
 
-High-level steps:
+1. Configure `wrangler.toml` for your deployment.
+2. Bind Workers AI, and add R2 when image URL output is required.
+3. Set `ACCESS_TOKEN` and `CLOUDFLARE_API_TOKEN` using `wrangler secret put`.
+4. Configure `CLOUDFLARE_ACCOUNT_ID` and any optional model mappings.
+5. Deploy to your Cloudflare account.
 
-1. Configure `wrangler.toml` for your environment
-2. Bind required resources such as Workers AI and R2
-3. Set required secrets using `wrangler secret put`
-4. Deploy to your Cloudflare account
-
-Domain routing and custom hostnames are intentionally excluded from the public configuration and must be set up per deployment.
+The Cloudflare account ID and API token are required for native API endpoints and model discovery. Domain routing and custom hostnames must be configured for each deployment.
 
 ---
 
-## Intended Use Cases
+## Usage
 
 - Development and testing of OpenAI-compatible clients
-- Automation platforms such as workflow engines and orchestration tools
+- Workflow engines and automation platforms
 - Cost-sensitive AI workloads
-- Regional or edge-based inference gateways
-- Controlled production environments
+- Edge-based inference gateways
+- Controlled production deployments
 
 ---
 
 ## Limitations
 
-- Model availability and behavior depend on Workers AI
-- Token accounting may differ from OpenAI
-- Not all OpenAI features are supported
-- API behavior may change as Workers AI evolves
+Model availability, optional parameters, and token accounting depend on Workers AI. The implementation supports a defined set of OpenAI-style APIs, with explicit errors for unsupported adapter options.
 
-Users should evaluate suitability for their specific workload.
+Persistent conversation storage, background responses, OpenAI-hosted tools, and Realtime sessions are not implemented. Generated image URLs remain publicly accessible until the stored objects are removed.
+
+Evaluate compatibility and model behaviour against the requirements of your workload.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## Support
 
-For support or inquiries:
-
-- LinkedIn: [rubixvi](https://www.linkedin.com/in/rubixvi/)
-- Website: [Rubix Studios](https://rubixstudios.com.au)
+- [LinkedIn](https://www.linkedin.com/in/rubixvi/)
+- [Rubix Studios](https://rubixstudios.com.au)
 
 ## Author
 

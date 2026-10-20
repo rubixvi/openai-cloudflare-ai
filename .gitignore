@@ -169,3 +169,6 @@ dist
 .vscode
 .wrangler\tmp
 node_modules
+
+# Private deployment
+/wrangler.production.jsonc
