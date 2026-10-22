@@ -65,7 +65,6 @@ Compatibility depends on the selected model and the features used by each client
 ## Deployment
 
 This repository is designed for deployment using Wrangler.
-
 1. Configure `wrangler.toml` for your deployment.
 2. Bind Workers AI, and add R2 when image URL output is required.
 3. Set `ACCESS_TOKEN` and `CLOUDFLARE_API_TOKEN` using `wrangler secret put`.
