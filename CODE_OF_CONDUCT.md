@@ -16,6 +16,7 @@ diverse, inclusive, and healthy community.
 
 Examples of behavior that contributes to a positive environment for our
 community include:
+
 - Demonstrating empathy and kindness toward other people
 - Being respectful of differing opinions, viewpoints, and experiences
 - Giving and gracefully accepting constructive feedback
@@ -25,6 +26,7 @@ community include:
   overall community
 
 Examples of unacceptable behavior include:
+
 - The use of sexualized language or imagery, and sexual attention or
   advances of any kind
 - Trolling, insulting or derogatory comments, and personal or political attacks
@@ -58,6 +60,7 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at:
+
 - X: [@rubixvi](https://x.com/rubixvi)
 - Website: [Contact Form](https://rubixstudios.com.au)
 - Facebook: [rubixvi](https://www.facebook.com/rubixvi/)

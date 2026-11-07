@@ -9,6 +9,7 @@
 ## Reporting a Vulnerability
 
 We take the security of Rubix Payload seriously. If you believe you have found a security vulnerability, please report it to us following these steps:
+
 1. **DO NOT** create a public GitHub issue for the vulnerability.
 2. Contact us directly at one of the following:
    - X: [@rubixvi](https://x.com/rubixvi)
@@ -16,6 +17,7 @@ We take the security of Rubix Payload seriously. If you believe you have found a
    - Facebook: [rubixvi](https://www.facebook.com/rubixvi/)
 
 Please include the following details in your report:
+
 - Description of the vulnerability
 - Steps to reproduce the issue
 - Potential impact of the vulnerability
@@ -38,6 +40,7 @@ Please include the following details in your report:
 ## Best Practices
 
 When using Rubix Payload in production:
+
 1. Keep all dependencies up to date
 2. Use secure environment variables for sensitive data
 3. Regularly backup your database
@@ -48,6 +51,7 @@ When using Rubix Payload in production:
 ## Security Monitoring
 
 We continuously monitor our codebase for security issues through:
+
 - Automated dependency scanning
 - Regular code reviews
 - Third-party security audits
