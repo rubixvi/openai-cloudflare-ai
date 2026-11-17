@@ -84,6 +84,7 @@ export async function forwardEmbeddings(
   }
 
   const seen = new Set<number>()
+
   const data: JsonObject[] = result.data.map((item: unknown) =>
     normalizeEmbedding(item, expectedCount, seen, dimensions, body.encoding_format)
   )

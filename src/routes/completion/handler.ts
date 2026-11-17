@@ -146,6 +146,7 @@ export async function forwardCompletion(
   body: CompletionRequest
 ): Promise<Response> {
   const model = resolveModel(env, body.model, 'completion')
+
   const options: JsonObject = {
     prompt: body.prompt,
     stream: body.stream ?? false,
@@ -158,9 +159,11 @@ export async function forwardCompletion(
   }
 
   const cancellation = new AbortController()
+
   const inferenceRequest = new Request(request.url, {
     signal: AbortSignal.any([request.signal, cancellation.signal]),
   })
+
   const result = await runModel(inferenceRequest, env, model, options)
   const id = `cmpl-${crypto.randomUUID().replaceAll('-', '')}`
   const created = Math.floor(Date.now() / 1000)
