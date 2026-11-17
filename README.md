@@ -1,4 +1,4 @@
-# OpenAI-Compatible API on Cloudflare Workers AI
+# OpenAI API using Cloudflare Workers
 
 ## Overview
 
@@ -6,23 +6,17 @@ This implementation provides an OpenAI-compatible API deployed on Cloudflare Wor
 
 The design supports experimentation, migration, and cost-managed workloads while maintaining compatibility with established OpenAI client integrations.
 
----
-
 ## Purpose
 
 Many production workloads can achieve suitable outcomes using smaller or alternative models. Systems built around the OpenAI API can make evaluating these options difficult when integrations depend on a specific interface.
 
-This project exposes OpenAI-compatible HTTP endpoints through Cloudflare Workers and delegates inference to Workers AI models. It provides a consistent integration layer for evaluating and operating alternative models.
-
----
+This project exposes OpenAI-compatible HTTP endpoints through Cloudflare Workers and delegates inference to Workers AI models. It provides a integration layer for evaluating and operating alternative models.
 
 ## Scope
 
 The implementation prioritises API compatibility over full behavioural parity with OpenAI services. It supports development workflows, internal platforms, automation, and controlled production deployments where Workers AI capabilities meet the workload requirements.
 
 Model support and functionality depend on current Workers AI availability and account access.
-
----
 
 ## Features
 
@@ -31,15 +25,13 @@ Model support and functionality depend on current Workers AI availability and ac
 | Text       | Single-prompt text completions with streaming.                          |
 | Chat       | Chat completions with native streaming and model-supported tool calls.  |
 | Responses  | Non-streaming GPT-OSS responses through the native compatible endpoint. |
-| Audio      | Whisper transcription, direct English translation, and subtitle output. |
+| Audio      | Whisper and Nova-3 transcription, English translation, and subtitles.   |
 | Speech     | Speech generation using supported Aura models and speaker voices.       |
 | Embeddings | Batched text embeddings with float or base64 output.                    |
 | Images     | Image generation with URL or base64 output and R2-backed retrieval.     |
 | Models     | Model discovery, configured aliases, and individual model retrieval.    |
 
-Audio translation uses Whisper's translation task directly. Chat, embeddings, and Responses use Cloudflare's native OpenAI-compatible endpoints where supported.
-
----
+Whisper audio translation uses the model's translation task . Chat, embeddings, and Responses use Cloudflare's native OpenAI-compatible endpoints where supported.
 
 ## Compatibility
 
@@ -51,7 +43,9 @@ Audio translation uses Whisper's translation task directly. Chat, embeddings, an
 
 Compatibility depends on the selected model and the features used by each client. OpenAI-specific services and unsupported model capabilities are outside the project's scope.
 
----
+## Verification
+
+Run `pnpm typecheck` and `pnpm test`. Tests compile the Worker into a temporary ignored `.test-dist` directory and exercise the HTTP routes with mocked Workers AI and Cloudflare API responses. They do not call live Cloudflare inference services, so production model behaviour and account access still require deployment testing.
 
 ## Architecture
 
@@ -66,13 +60,13 @@ Compatibility depends on the selected model and the features used by each client
 
 This repository is designed for deployment using Wrangler.
 
-1. Configure `wrangler.toml` for your deployment.
+1. Configure `wrangler.jsonc` for your deployment and enable `workers_dev` or add a route for the Worker.
 2. Bind Workers AI, and add R2 when image URL output is required.
 3. Set `ACCESS_TOKEN` and `CLOUDFLARE_API_TOKEN` using `wrangler secret put`.
 4. Configure `CLOUDFLARE_ACCOUNT_ID` and any optional model mappings.
 5. Deploy to your Cloudflare account.
 
-The Cloudflare account ID and API token are required for native API endpoints and model discovery. Domain routing and custom hostnames must be configured for each deployment.
+The Cloudflare account ID and API token are required for native API endpoints, classic Whisper inference, and model discovery. A Workers AI binding is required for Whisper Large v3 Turbo, Nova-3, and Aura. Configure domain routing or enable `workers.dev` access for each deployment.
 
 ---
 

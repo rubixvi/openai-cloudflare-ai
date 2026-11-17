@@ -1,4 +1,10 @@
-import { type AudioResult, type Env, type JsonObject, type TimedText } from '../types'
+import { type AudioResult, type Env, type JsonObject } from '../types'
+import {
+  normalizeNova,
+  normalizeWhisper,
+  subtitleResponse,
+  verboseResponse,
+} from '../utils/audio'
 import { uint8ArrayToBase64 } from '../utils/converters'
 import { ApiError, invalid, unsupported, upstreamError } from '../utils/errors'
 import { AUDIO_MODELS, resolveModel } from '../utils/models'
@@ -8,42 +14,100 @@ import {
   runModel,
   unwrapResult,
 } from '../utils/provider'
-import { AUDIO_LIMIT, formString, isObject, readAudioForm } from '../utils/validation'
+import { AUDIO_LIMIT, formString, readAudioForm } from '../utils/validation'
 
-function timestamp(seconds: number, separator: string): string {
-  const milliseconds = Math.round(seconds * 1000)
+const NOVA_MODEL = '@cf/deepgram/nova-3'
+const TURBO_MODEL = '@cf/openai/whisper-large-v3-turbo'
+const FORM_FIELDS = [
+  'file',
+  'model',
+  'language',
+  'prompt',
+  'response_format',
+  'temperature',
+  'timestamp_granularities[]',
+  'vad_filter',
+] as const
 
-  return `${String(Math.floor(milliseconds / 3600000)).padStart(2, '0')}:${String(Math.floor(milliseconds / 60000) % 60).padStart(2, '0')}:${String(Math.floor(milliseconds / 1000) % 60).padStart(2, '0')}${separator}${String(milliseconds % 1000).padStart(3, '0')}`
-}
+function booleanForm(form: FormData, field: string): boolean | undefined {
+  const value = formString(form, field)
 
-function timedSegments(result: AudioResult): TimedText[] {
-  const segments =
-    result.segments ??
-    result.words?.map((word) => ({
-      start: word.start,
-      end: word.end,
-      text: word.word,
-    }))
-
-  if (!segments) {
-    return []
+  if (value === undefined) {
+    return undefined
   }
 
-  return segments.map((segment) => {
-    if (
-      typeof segment.start !== 'number' ||
-      !Number.isFinite(segment.start) ||
-      segment.start < 0 ||
-      typeof segment.end !== 'number' ||
-      !Number.isFinite(segment.end) ||
-      segment.end < segment.start ||
-      typeof segment.text !== 'string'
-    ) {
-      upstreamError('The provider returned invalid subtitle timestamps.')
-    }
+  if (value !== 'true' && value !== 'false') {
+    invalid('Use true or false.', field)
+  }
 
-    return { start: segment.start, end: segment.end, text: segment.text }
-  })
+  return value === 'true'
+}
+
+async function inferenceJson(value: unknown): Promise<unknown> {
+  return unwrapResult(value instanceof Response ? await readProviderJson(value) : value)
+}
+
+async function transcribeWhisper(
+  request: Request,
+  env: Env,
+  file: File,
+  model: string,
+  translate: boolean,
+  language?: string,
+  prompt?: string,
+  vadFilter?: boolean
+): Promise<AudioResult> {
+  if (model !== TURBO_MODEL) {
+    const response = await cloudflareRequest(request, env, `/run/${model}`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: await file.arrayBuffer(),
+    })
+
+    return normalizeWhisper(await inferenceJson(response))
+  }
+
+  const input: JsonObject = {
+    audio: uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer())),
+    task: translate ? 'translate' : 'transcribe',
+  }
+
+  if (language) {
+    input.language = language.toLowerCase()
+  }
+
+  if (prompt !== undefined) {
+    input.initial_prompt = prompt
+  }
+
+  if (vadFilter !== undefined) {
+    input.vad_filter = vadFilter
+  }
+
+  return normalizeWhisper(await inferenceJson(await runModel(request, env, model, input)))
+}
+
+async function transcribeNova(
+  request: Request,
+  env: Env,
+  file: File,
+  language?: string
+): Promise<AudioResult> {
+  const input: JsonObject = {
+    audio: {
+      body: file.stream(),
+      contentType: file.type || 'application/octet-stream',
+    },
+    detect_language: language === undefined,
+  }
+
+  if (language) {
+    input.language = language
+  }
+
+  const output = await inferenceJson(await runModel(request, env, NOVA_MODEL, input))
+
+  return normalizeNova(output, language)
 }
 
 async function audioHandler(
@@ -54,17 +118,7 @@ async function audioHandler(
   const form = await readAudioForm(request)
 
   for (const [key] of form) {
-    if (
-      ![
-        'file',
-        'model',
-        'language',
-        'prompt',
-        'response_format',
-        'temperature',
-        'timestamp_granularities[]',
-      ].includes(key)
-    ) {
+    if (!FORM_FIELDS.includes(key as (typeof FORM_FIELDS)[number])) {
       unsupported(key)
     }
   }
@@ -89,16 +143,14 @@ async function audioHandler(
   const model = resolveModel(env, formString(form, 'model'), 'audio')
 
   if (!AUDIO_MODELS.has(model)) {
-    unsupported('model', 'Choose a supported Whisper model from /v1/models.')
+    unsupported('model', 'Choose a supported transcription model from /v1/models.')
   }
 
-  const turbo = model === '@cf/openai/whisper-large-v3-turbo'
+  const turbo = model === TURBO_MODEL
+  const nova = model === NOVA_MODEL
 
   if (translate && !turbo) {
-    unsupported(
-      'model',
-      'Audio translation requires @cf/openai/whisper-large-v3-turbo, which exposes the translate task.'
-    )
+    unsupported('model', 'Audio translation requires @cf/openai/whisper-large-v3-turbo.')
   }
 
   const format = formString(form, 'response_format') ?? 'json'
@@ -108,20 +160,23 @@ async function audioHandler(
   }
 
   const language = formString(form, 'language')
-
-  if (translate && language !== undefined) {
-    unsupported(
-      'language',
-      'The translations endpoint automatically detects the source language.'
-    )
-  }
-
-  if (language !== undefined && !/^[a-z]{2}$/i.test(language)) {
-    invalid('Use a two-letter ISO 639-1 language code.', 'language')
-  }
-
   const prompt = formString(form, 'prompt')
   const temperature = formString(form, 'temperature')
+  const vadFilter = booleanForm(form, 'vad_filter')
+
+  if (translate && language !== undefined) {
+    unsupported('language', 'The translations endpoint detects the source language.')
+  }
+
+  if (
+    language !== undefined &&
+    !(nova ? /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i : /^[a-z]{2}$/i).test(language)
+  ) {
+    invalid(
+      nova ? 'Use a BCP-47 language tag.' : 'Use a two-letter ISO 639-1 language code.',
+      'language'
+    )
+  }
 
   if (
     temperature !== undefined &&
@@ -131,84 +186,72 @@ async function audioHandler(
   ) {
     unsupported(
       'temperature',
-      "This Whisper adapter supports the provider's default decoding only."
+      'This adapter supports the provider default decoding only.'
     )
   }
 
-  if (!turbo && (language !== undefined || prompt !== undefined)) {
+  if (prompt !== undefined && (prompt.length > 2000 || !turbo)) {
     unsupported(
-      language !== undefined ? 'language' : 'prompt',
-      'Use whisper-large-v3-turbo for language and prompt controls.'
+      'prompt',
+      'Only Whisper Large v3 Turbo supports prompts up to 2000 characters.'
     )
   }
 
-  if (!turbo && format === 'verbose_json') {
-    unsupported('response_format', 'Use whisper-large-v3-turbo for verbose metadata.')
+  if (!turbo && vadFilter !== undefined) {
+    unsupported('vad_filter', 'Voice activity filtering requires Whisper Large v3 Turbo.')
+  }
+
+  if (
+    model === '@cf/openai/whisper-tiny-en' &&
+    language !== undefined &&
+    language !== 'en'
+  ) {
+    unsupported('language', 'Whisper Tiny English accepts English audio only.')
+  }
+
+  if (!turbo && !nova && language !== undefined) {
+    unsupported('language', 'Use Whisper Large v3 Turbo or Nova-3 for language control.')
+  }
+
+  if (!turbo && !nova && format === 'verbose_json') {
+    unsupported(
+      'response_format',
+      'Verbose metadata requires Whisper Large v3 Turbo or Nova-3.'
+    )
   }
 
   const granularities = form.getAll('timestamp_granularities[]')
 
-  if (!granularities.every((value) => value === 'word' || value === 'segment')) {
-    invalid('Use word or segment timestamp granularity.', 'timestamp_granularities')
+  if (
+    granularities.length > 2 ||
+    new Set(granularities).size !== granularities.length ||
+    !granularities.every((value) => value === 'word' || value === 'segment')
+  ) {
+    invalid(
+      'Use distinct word or segment timestamp granularities.',
+      'timestamp_granularities[]'
+    )
   }
 
   if (granularities.length && (translate || format !== 'verbose_json')) {
     unsupported(
-      'timestamp_granularities',
+      'timestamp_granularities[]',
       'Timestamp granularities require transcription with verbose_json.'
     )
   }
 
-  let output: unknown
-
-  if (turbo) {
-    const options: JsonObject = {
-      audio: uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer())),
-      task: translate ? 'translate' : 'transcribe',
-    }
-
-    if (language) {
-      options.language = language.toLowerCase()
-    }
-
-    if (prompt !== undefined) {
-      options.initial_prompt = prompt
-    }
-
-    output = await runModel(request, env, model, options)
-  } else {
-    const response = await cloudflareRequest(request, env, `/run/${model}`, {
-      method: 'POST',
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      body: await file.arrayBuffer(),
-    })
-
-    output = unwrapResult(await readProviderJson(response))
-  }
-
-  if (!isObject(output) || typeof output.text !== 'string') {
-    upstreamError('The provider returned an invalid transcription.')
-  }
-
-  if (
-    output.segments !== undefined &&
-    (!Array.isArray(output.segments) || !output.segments.every(isObject))
-  ) {
-    upstreamError()
-  }
-
-  if (
-    output.words !== undefined &&
-    (!Array.isArray(output.words) || !output.words.every(isObject))
-  ) {
-    upstreamError()
-  }
-
-  if (output.transcription_info !== undefined && !isObject(output.transcription_info)) {
-    upstreamError()
-  }
-
-  const result = output as unknown as AudioResult
+  const result = nova
+    ? await transcribeNova(request, env, file, language)
+    : await transcribeWhisper(
+        request,
+        env,
+        file,
+        model,
+        translate,
+        language,
+        prompt,
+        vadFilter
+      )
 
   if (format === 'json') {
     return Response.json({ text: result.text })
@@ -220,74 +263,15 @@ async function audioHandler(
     })
   }
 
-  if (format === 'vtt' || format === 'srt') {
-    const segments = timedSegments(result)
-
-    if (!segments.length && result.text.trim()) {
-      if (
-        format === 'vtt' &&
-        typeof result.vtt === 'string' &&
-        result.vtt.startsWith('WEBVTT')
-      ) {
-        return new Response(result.vtt, {
-          headers: { 'Content-Type': 'text/vtt; charset=utf-8' },
-        })
-      }
-
-      upstreamError('The provider did not return subtitle timestamps.')
-    }
-
-    const separator = format === 'srt' ? ',' : '.'
-    const subtitles = segments
-      .map(
-        (segment, index) =>
-          `${index + 1}\n${timestamp(segment.start, separator)} --> ${timestamp(segment.end, separator)}\n${segment.text.trim()}\n`
-      )
-      .join('\n')
-
-    return new Response(`${format === 'vtt' ? 'WEBVTT\n\n' : ''}${subtitles}`, {
-      headers: {
-        'Content-Type':
-          format === 'vtt'
-            ? 'text/vtt; charset=utf-8'
-            : 'application/x-subrip; charset=utf-8',
-      },
-    })
+  if (format === 'srt' || format === 'vtt') {
+    return subtitleResponse(result, format)
   }
 
-  const info = result.transcription_info
-
-  if (
-    typeof info?.duration !== 'number' ||
-    !Number.isFinite(info.duration) ||
-    typeof info.language !== 'string'
-  ) {
-    upstreamError('The provider did not return verbose audio metadata.')
+  if (format === 'verbose_json') {
+    return verboseResponse(result, granularities as string[], translate, language)
   }
 
-  const segments = result.segments ?? []
-  const words = segments.flatMap((segment) =>
-    Array.isArray(segment.words) ? segment.words : []
-  )
-  const includeSegments = !granularities.length || granularities.includes('segment')
-
-  if (granularities.includes('word') && !words.length && result.text.trim()) {
-    unsupported(
-      'timestamp_granularities',
-      'The provider did not supply word timestamps for this result.'
-    )
-  }
-
-  return Response.json({
-    task: translate ? 'translate' : 'transcribe',
-    language: translate ? 'english' : info.language,
-    duration: info.duration,
-    text: result.text,
-    ...(includeSegments
-      ? { segments: segments.map((segment, id) => ({ ...segment, id })) }
-      : {}),
-    ...(granularities.includes('word') ? { words } : {}),
-  })
+  return upstreamError('Unsupported transcription output format.')
 }
 
 export const transcriptionHandler = (request: Request, env: Env): Promise<Response> =>

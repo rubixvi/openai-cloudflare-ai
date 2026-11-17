@@ -64,6 +64,7 @@ export const AUDIO_MODELS = new Set([
   '@cf/openai/whisper',
   '@cf/openai/whisper-large-v3-turbo',
   '@cf/openai/whisper-tiny-en',
+  '@cf/deepgram/nova-3',
 ])
 
 export const SPEECH_VOICES: Record<string, readonly string[]> = {

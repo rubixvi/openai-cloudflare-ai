@@ -116,13 +116,26 @@ export interface TimedText {
   text: string
 }
 
+export interface TimedWord {
+  end: number
+  start: number
+  word: string
+}
+
+export interface AudioSegment extends TimedText {
+  words?: TimedWord[]
+}
+
 export interface AudioResult {
-  segments?: Array<Partial<TimedText> & JsonObject>
+  segments?: AudioSegment[]
   text: string
-  transcription_info?: { language?: string; duration?: number }
+  transcription_info?: {
+    language?: string
+    duration?: number
+  }
   vtt?: string
   word_count?: number
-  words?: Array<{ word: string; start: number; end: number }>
+  words?: TimedWord[]
 }
 
 export interface GenerationResult {

@@ -4,6 +4,19 @@ import { resolveModel, SPEECH_VOICES } from '../utils/models'
 import { runModel } from '../utils/provider'
 import { allowedFields, readJson, stringValue } from '../utils/validation'
 
+const AUDIO_FORMATS = {
+  mp3: { encoding: 'mp3', container: 'none', contentType: 'audio/mpeg' },
+  opus: { encoding: 'opus', container: 'ogg', contentType: 'audio/ogg' },
+  aac: { encoding: 'aac', container: 'none', contentType: 'audio/aac' },
+  flac: { encoding: 'flac', container: 'none', contentType: 'audio/flac' },
+  wav: { encoding: 'linear16', container: 'wav', contentType: 'audio/wav' },
+  pcm: {
+    encoding: 'linear16',
+    container: 'none',
+    contentType: 'application/octet-stream',
+  },
+} as const
+
 export async function speechHandler(request: Request, env: Env): Promise<Response> {
   const input = await readJson(request)
 
@@ -25,31 +38,24 @@ export async function speechHandler(request: Request, env: Env): Promise<Respons
   const voices = Object.hasOwn(SPEECH_VOICES, model) ? SPEECH_VOICES[model] : undefined
 
   if (!voices) {
-    unsupported('model', 'Choose an Aura speech model from /v1/models.')
+    unsupported('model', 'Choose a supported Aura speech model from /v1/models.')
   }
 
   if (!voices.includes(voice)) {
     invalid(
-      'Use a speaker name supported by the selected Aura model. OpenAI voice names are not automatically mapped.',
+      'Use a speaker supported by the selected Aura model. ' +
+        'OpenAI voice names are not mapped.',
       'voice'
     )
   }
 
   const format = input.response_format ?? 'mp3'
-  const formats = {
-    mp3: { encoding: 'mp3', container: 'none', type: 'audio/mpeg' },
-    opus: { encoding: 'opus', container: 'ogg', type: 'audio/ogg' },
-    aac: { encoding: 'aac', container: 'none', type: 'audio/aac' },
-    flac: { encoding: 'flac', container: 'none', type: 'audio/flac' },
-    wav: { encoding: 'linear16', container: 'wav', type: 'audio/wav' },
-    pcm: { encoding: 'linear16', container: 'none', type: 'audio/pcm' },
-  }
 
-  if (typeof format !== 'string' || !Object.hasOwn(formats, format)) {
+  if (typeof format !== 'string' || !Object.hasOwn(AUDIO_FORMATS, format)) {
     invalid('Use mp3, opus, aac, flac, wav, or pcm.', 'response_format')
   }
 
-  const settings = formats[format as NonNullable<SpeechRequest['response_format']>]
+  const settings = AUDIO_FORMATS[format as NonNullable<SpeechRequest['response_format']>]
   const result = await runModel(
     request,
     env,
@@ -64,21 +70,38 @@ export async function speechHandler(request: Request, env: Env): Promise<Respons
     true
   )
 
-  if (!(result instanceof Response)) {
-    return upstreamError('The provider returned unsupported speech audio.')
+  if (result instanceof Response) {
+    const type = result.headers.get('Content-Type') ?? ''
+
+    if (type.includes('json') || type.includes('text/')) {
+      await result.body?.cancel()
+      upstreamError('The provider returned JSON or text instead of speech audio.')
+    }
+
+    if (!result.body) {
+      upstreamError('The provider returned no speech audio.')
+    }
+
+    const headers = new Headers(result.headers)
+
+    if (!type.startsWith('audio/') || type === 'application/octet-stream') {
+      headers.set('Content-Type', settings.contentType)
+    }
+
+    return new Response(result.body, { headers })
   }
 
-  if ((result.headers.get('Content-Type') ?? '').includes('application/json')) {
-    await result.body?.cancel()
-
-    return upstreamError('The provider returned JSON instead of speech audio.')
+  if (result instanceof ReadableStream) {
+    return new Response(result, {
+      headers: { 'Content-Type': settings.contentType },
+    })
   }
 
-  const headers = new Headers(result.headers)
-
-  if (!headers.get('Content-Type')?.startsWith('audio/')) {
-    headers.set('Content-Type', settings.type)
+  if (result instanceof Uint8Array || result instanceof ArrayBuffer) {
+    return new Response(result, {
+      headers: { 'Content-Type': settings.contentType },
+    })
   }
 
-  return new Response(result.body, { headers })
+  return upstreamError('The provider returned unsupported speech audio.')
 }

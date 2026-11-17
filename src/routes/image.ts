@@ -34,7 +34,13 @@ function imageType(bytes: Uint8Array): string {
 async function imageBytes(result: unknown): Promise<Uint8Array> {
   let bytes: Uint8Array
 
-  if (result instanceof ReadableStream) {
+  if (result instanceof Response) {
+    if (!result.body) {
+      upstreamError('The provider returned an empty image response.')
+    }
+
+    bytes = await streamToBuffer(result.body)
+  } else if (result instanceof ReadableStream) {
     bytes = await streamToBuffer(result)
   } else if (result instanceof Uint8Array) {
     bytes = result

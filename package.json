@@ -6,7 +6,9 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json --module nodenext --moduleResolution nodenext --target es2022 --rootDir src --outDir .test-dist --noEmit false && node --test test/audio.test.mjs test/routes.test.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",

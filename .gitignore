@@ -172,3 +172,6 @@ node_modules
 
 # Private deployment
 /wrangler.production.jsonc
+
+# Integration tests
+.test-dist/
