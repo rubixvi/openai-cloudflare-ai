@@ -1,33 +1,10 @@
-import { type AudioResult, type Env, type JsonObject } from '../types'
-import {
-  normalizeNova,
-  normalizeWhisper,
-  subtitleResponse,
-  verboseResponse,
-} from '../utils/audio'
-import { uint8ArrayToBase64 } from '../utils/converters'
-import { ApiError, invalid, unsupported, upstreamError } from '../utils/errors'
-import { AUDIO_MODELS, resolveModel } from '../utils/models'
-import {
-  cloudflareRequest,
-  readProviderJson,
-  runModel,
-  unwrapResult,
-} from '../utils/provider'
-import { AUDIO_LIMIT, formString, readAudioForm } from '../utils/validation'
-
-const NOVA_MODEL = '@cf/deepgram/nova-3'
-const TURBO_MODEL = '@cf/openai/whisper-large-v3-turbo'
-const FORM_FIELDS = [
-  'file',
-  'model',
-  'language',
-  'prompt',
-  'response_format',
-  'temperature',
-  'timestamp_granularities[]',
-  'vad_filter',
-] as const
+import { type Env } from '../../types'
+import { subtitleResponse, verboseResponse } from '../../utils/audio'
+import { ApiError, invalid, unsupported, upstreamError } from '../../utils/errors'
+import { AUDIO_MODELS, resolveModel } from '../../utils/models'
+import { AUDIO_LIMIT, formString, readAudioForm } from '../../utils/validation'
+import { FORM_FIELDS, NOVA_MODEL, RESPONSE_FORMATS, TURBO_MODEL } from './constant'
+import { transcribeAudio } from './handler'
 
 function booleanForm(form: FormData, field: string): boolean | undefined {
   const value = formString(form, field)
@@ -41,73 +18,6 @@ function booleanForm(form: FormData, field: string): boolean | undefined {
   }
 
   return value === 'true'
-}
-
-async function inferenceJson(value: unknown): Promise<unknown> {
-  return unwrapResult(value instanceof Response ? await readProviderJson(value) : value)
-}
-
-async function transcribeWhisper(
-  request: Request,
-  env: Env,
-  file: File,
-  model: string,
-  translate: boolean,
-  language?: string,
-  prompt?: string,
-  vadFilter?: boolean
-): Promise<AudioResult> {
-  if (model !== TURBO_MODEL) {
-    const response = await cloudflareRequest(request, env, `/run/${model}`, {
-      method: 'POST',
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      body: await file.arrayBuffer(),
-    })
-
-    return normalizeWhisper(await inferenceJson(response))
-  }
-
-  const input: JsonObject = {
-    audio: uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer())),
-    task: translate ? 'translate' : 'transcribe',
-  }
-
-  if (language) {
-    input.language = language.toLowerCase()
-  }
-
-  if (prompt !== undefined) {
-    input.initial_prompt = prompt
-  }
-
-  if (vadFilter !== undefined) {
-    input.vad_filter = vadFilter
-  }
-
-  return normalizeWhisper(await inferenceJson(await runModel(request, env, model, input)))
-}
-
-async function transcribeNova(
-  request: Request,
-  env: Env,
-  file: File,
-  language?: string
-): Promise<AudioResult> {
-  const input: JsonObject = {
-    audio: {
-      body: file.stream(),
-      contentType: file.type || 'application/octet-stream',
-    },
-    detect_language: language === undefined,
-  }
-
-  if (language) {
-    input.language = language
-  }
-
-  const output = await inferenceJson(await runModel(request, env, NOVA_MODEL, input))
-
-  return normalizeNova(output, language)
 }
 
 async function audioHandler(
@@ -155,7 +65,7 @@ async function audioHandler(
 
   const format = formString(form, 'response_format') ?? 'json'
 
-  if (!['json', 'text', 'verbose_json', 'srt', 'vtt'].includes(format)) {
+  if (!RESPONSE_FORMATS.includes(format as (typeof RESPONSE_FORMATS)[number])) {
     invalid('Use json, text, verbose_json, srt, or vtt.', 'response_format')
   }
 
@@ -240,18 +150,16 @@ async function audioHandler(
     )
   }
 
-  const result = nova
-    ? await transcribeNova(request, env, file, language)
-    : await transcribeWhisper(
-        request,
-        env,
-        file,
-        model,
-        translate,
-        language,
-        prompt,
-        vadFilter
-      )
+  const result = await transcribeAudio({
+    request,
+    env,
+    file,
+    model,
+    translate,
+    language,
+    prompt,
+    vadFilter,
+  })
 
   if (format === 'json') {
     return Response.json({ text: result.text })

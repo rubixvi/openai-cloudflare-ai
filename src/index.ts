@@ -30,12 +30,15 @@ async function authenticate(request: Request, env: Env): Promise<void> {
   }
 
   const encoder = new TextEncoder()
+
   const [actual, expected] = await Promise.all([
     crypto.subtle.digest('SHA-256', encoder.encode(token)),
     crypto.subtle.digest('SHA-256', encoder.encode(env.ACCESS_TOKEN)),
   ])
+
   const left = new DataView(actual)
   const right = new DataView(expected)
+
   let difference = 0
 
   for (let offset = 0; offset < left.byteLength; offset += 4) {
