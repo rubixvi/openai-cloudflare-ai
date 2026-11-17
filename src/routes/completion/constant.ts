@@ -1,0 +1,32 @@
+export const COMPLETION_FIELDS = [
+  'model',
+  'prompt',
+  'stream',
+  'max_tokens',
+  'temperature',
+  'top_p',
+  'top_k',
+  'seed',
+  'repetition_penalty',
+  'frequency_penalty',
+  'presence_penalty',
+  'n',
+  'echo',
+  'logprobs',
+  'best_of',
+  'suffix',
+  'stop',
+  'user',
+  'stream_options',
+] as const
+
+export const GENERATION_FIELDS = [
+  'max_tokens',
+  'temperature',
+  'top_p',
+  'top_k',
+  'seed',
+  'repetition_penalty',
+  'frequency_penalty',
+  'presence_penalty',
+] as const
