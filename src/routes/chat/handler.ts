@@ -16,8 +16,8 @@ export async function forwardChat(
 ): Promise<Response> {
   const { max_completion_tokens, ...options } = body
 
-  const explicitLimit = body.max_tokens ?? max_completion_tokens
-  const maxTokens = typeof explicitLimit === 'number' ? explicitLimit : DEFAULT_MAX_TOKENS
+  const limit = body.max_tokens ?? max_completion_tokens
+  const maxTokens = typeof limit === 'number' ? limit : DEFAULT_MAX_TOKENS
 
   const payload = {
     ...options,
@@ -29,7 +29,7 @@ export async function forwardChat(
     return await nativeRequest(request, env, '/chat/completions', payload)
   } catch (error) {
     if (
-      explicitLimit !== undefined ||
+      limit !== undefined ||
       !(error instanceof ApiError) ||
       ![400, 413].includes(error.status)
     ) {
@@ -42,11 +42,10 @@ export async function forwardChat(
       throw error
     }
 
-    const estimatedTotal = Number(match[1])
-    const contextWindow = Number(match[2])
+    const total = Number(match[1])
+    const window = Number(match[2])
 
-    const retryLimit =
-      maxTokens - (estimatedTotal - contextWindow) - CONTEXT_SAFETY_MARGIN
+    const retryLimit = maxTokens - (total - window) - CONTEXT_SAFETY_MARGIN
 
     if (
       !Number.isSafeInteger(retryLimit) ||
