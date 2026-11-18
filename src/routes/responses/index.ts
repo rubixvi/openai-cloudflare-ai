@@ -1,14 +1,15 @@
-import { type Env, type ResponsesRequest } from '../types'
-import { invalid, unsupported, upstreamError } from '../utils/errors'
-import { RESPONSES_MODELS, resolveModel } from '../utils/models'
-import { nativeRequest, readProviderJson, unwrapResult } from '../utils/provider'
+import { type Env, type ResponsesRequest } from '../../types'
+import { invalid, unsupported } from '../../utils/errors'
+import { RESPONSES_MODELS, resolveModel } from '../../utils/models'
 import {
   booleanValue,
   isObject,
   numberValue,
   readJson,
   stringValue,
-} from '../utils/validation'
+} from '../../utils/validation'
+import { CONVERSATION_FIELDS, STATE_FIELDS, SUPPORTED_MESSAGE } from './constant'
+import { forwardResponses } from './handler'
 
 export async function responsesHandler(request: Request, env: Env): Promise<Response> {
   const input = await readJson(request)
@@ -29,7 +30,7 @@ export async function responsesHandler(request: Request, env: Env): Promise<Resp
     )
   }
 
-  for (const key of ['store', 'background']) {
+  for (const key of STATE_FIELDS) {
     booleanValue(input[key], key)
 
     if (input[key] === true) {
@@ -37,7 +38,7 @@ export async function responsesHandler(request: Request, env: Env): Promise<Resp
     }
   }
 
-  for (const key of ['previous_response_id', 'conversation']) {
+  for (const key of CONVERSATION_FIELDS) {
     if (input[key] !== undefined && input[key] !== null) {
       unsupported(
         key,
@@ -72,29 +73,8 @@ export async function responsesHandler(request: Request, env: Env): Promise<Resp
   const model = resolveModel(env, body.model, 'responses')
 
   if (!RESPONSES_MODELS.has(model)) {
-    unsupported(
-      'model',
-      'Cloudflare Responses supports @cf/openai/gpt-oss-120b and @cf/openai/gpt-oss-20b only.'
-    )
+    unsupported('model', SUPPORTED_MESSAGE)
   }
 
-  const response = await nativeRequest(request, env, '/responses', {
-    ...body,
-    model,
-    stream: false,
-    store: false,
-  })
-  const result = unwrapResult(await readProviderJson(response))
-
-  if (
-    !isObject(result) ||
-    result.object !== 'response' ||
-    typeof result.id !== 'string' ||
-    typeof result.created_at !== 'number' ||
-    !Array.isArray(result.output)
-  ) {
-    upstreamError('The provider returned an invalid Responses object.')
-  }
-
-  return Response.json(result, { headers: response.headers })
+  return forwardResponses(request, env, body, model)
 }

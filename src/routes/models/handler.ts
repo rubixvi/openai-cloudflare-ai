@@ -3,11 +3,23 @@ import {
   type Env,
   type ModelCacheEntry,
   type OpenAIModel,
-} from '../types'
-import { ApiError, upstreamError } from '../utils/errors'
-import { AUDIO_MODELS, IMAGE_PROFILES, modelMapper, SPEECH_MODELS } from '../utils/models'
-import { cloudflareRequest, readProviderJson } from '../utils/provider'
-import { isObject } from '../utils/validation'
+} from '../../types'
+import { upstreamError } from '../../utils/errors'
+import {
+  AUDIO_MODELS,
+  IMAGE_PROFILES,
+  modelMapper,
+  SPEECH_MODELS,
+} from '../../utils/models'
+import { cloudflareRequest, readProviderJson } from '../../utils/provider'
+import { isObject } from '../../utils/validation'
+import {
+  EXPOSED_MODEL_TASKS,
+  MAX_MODEL_PAGES,
+  MODEL_CACHE_MS,
+  MODEL_PAGE_SIZE,
+  MODEL_TIMEOUT_MS,
+} from './constant'
 
 const cache = new WeakMap<Env, ModelCacheEntry>()
 
@@ -24,13 +36,12 @@ async function getModels(request: Request, env: Env): Promise<CloudflareModel[]>
   }
 
   const models = new Map<string, CloudflareModel>()
-  const perPage = 100
 
-  for (let page = 1; page <= 100; page++) {
+  for (let page = 1; page <= MAX_MODEL_PAGES; page++) {
     const params = new URLSearchParams({
       hide_experimental: 'false',
       include_deprecated: 'false',
-      per_page: String(perPage),
+      per_page: String(MODEL_PAGE_SIZE),
       page: String(page),
     })
     const response = await cloudflareRequest(
@@ -38,7 +49,7 @@ async function getModels(request: Request, env: Env): Promise<CloudflareModel[]>
       env,
       `/models/search?${params}`,
       {},
-      15_000
+      MODEL_TIMEOUT_MS
     )
     const body = await readProviderJson(response)
 
@@ -76,14 +87,16 @@ async function getModels(request: Request, env: Env): Promise<CloudflareModel[]>
       body.result.length === 0 ||
       (totalPages !== undefined && page >= totalPages) ||
       (total !== undefined && models.size >= total) ||
-      (totalPages === undefined && total === undefined && body.result.length < perPage)
+      (totalPages === undefined &&
+        total === undefined &&
+        body.result.length < MODEL_PAGE_SIZE)
     ) {
       const result = [...models.values()]
 
       cache.set(env, {
         token: env.CLOUDFLARE_API_TOKEN,
         account: env.CLOUDFLARE_ACCOUNT_ID,
-        expires: Date.now() + 60_000,
+        expires: Date.now() + MODEL_CACHE_MS,
         models: result,
       })
 
@@ -102,8 +115,7 @@ function exposed(model: CloudflareModel): boolean {
   const task = model.task?.name
 
   return (
-    task === 'Text Generation' ||
-    task === 'Text Embeddings' ||
+    (task !== undefined && EXPOSED_MODEL_TASKS.has(task)) ||
     Object.hasOwn(IMAGE_PROFILES, model.name) ||
     AUDIO_MODELS.has(model.name) ||
     SPEECH_MODELS.has(model.name)
@@ -121,7 +133,7 @@ function asOpenAIModel(model: CloudflareModel, id = model.name): OpenAIModel {
   }
 }
 
-async function modelList(request: Request, env: Env): Promise<OpenAIModel[]> {
+export async function modelList(request: Request, env: Env): Promise<OpenAIModel[]> {
   const available = (await getModels(request, env)).filter(exposed)
   const result = new Map(available.map((model) => [model.name, asOpenAIModel(model)]))
   const byName = new Map(available.map((model) => [model.name, model]))
@@ -135,42 +147,4 @@ async function modelList(request: Request, env: Env): Promise<OpenAIModel[]> {
   }
 
   return [...result.values()].sort((left, right) => left.id.localeCompare(right.id))
-}
-
-export async function modelsHandler(request: Request, env: Env): Promise<Response> {
-  return Response.json({ object: 'list', data: await modelList(request, env) })
-}
-
-export async function modelHandler(request: Request, env: Env): Promise<Response> {
-  const pathname = new URL(request.url).pathname
-    .replace(/\/{2,}/g, '/')
-    .replace(/\/$/, '')
-  const encoded = pathname.replace(/^(?:\/v1)?\/models\//, '')
-  let id: string
-
-  try {
-    id = decodeURIComponent(encoded)
-  } catch {
-    throw new ApiError(
-      400,
-      'Invalid model identifier.',
-      'invalid_request_error',
-      'invalid_parameter',
-      'model'
-    )
-  }
-
-  const model = (await modelList(request, env)).find((candidate) => candidate.id === id)
-
-  if (!model) {
-    throw new ApiError(
-      404,
-      'The model was not found in the available Workers AI catalog.',
-      'invalid_request_error',
-      'model_not_found',
-      'model'
-    )
-  }
-
-  return Response.json(model)
 }
