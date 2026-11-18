@@ -110,6 +110,7 @@ function groupWords(words: AudioResult['words']): TimedText[] {
   }
 
   const segments: TimedText[] = []
+
   let current: TimedText | undefined
 
   for (const word of words) {

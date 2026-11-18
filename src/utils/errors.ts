@@ -41,6 +41,7 @@ export function errorResponse(error: unknown): Response {
           'server_error',
           'internal_error'
         )
+
   const body: ApiErrorBody = {
     error: {
       message: failure.message,
@@ -49,6 +50,7 @@ export function errorResponse(error: unknown): Response {
       code: failure.code,
     },
   }
+
   const headers = new Headers(failure.headers)
 
   headers.set('Content-Type', 'application/json')

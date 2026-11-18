@@ -8,6 +8,7 @@ export async function streamToBuffer(
 ): Promise<Uint8Array> {
   const chunks: Uint8Array[] = []
   const reader = stream.getReader()
+
   let length = 0
 
   try {
@@ -53,6 +54,7 @@ export async function* readSse(
 ): AsyncGenerator<StreamEvent> {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
+
   let buffer = ''
   let data: string[] = []
   let eventLength = 0

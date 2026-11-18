@@ -181,6 +181,7 @@ export function modelMapper(env: Env): Record<string, string> {
 export function resolveModel(env: Env, requested: unknown, kind: ModelKind): string {
   const value =
     requested === undefined ? undefined : stringValue(requested, 'model', true)
+
   const configured: Record<ModelKind, string | undefined> = {
     chat: env.DEFAULT_CHAT_MODEL,
     completion: env.DEFAULT_COMPLETION_MODEL ?? env.DEFAULT_CHAT_MODEL,
@@ -190,8 +191,10 @@ export function resolveModel(env: Env, requested: unknown, kind: ModelKind): str
     audio: env.DEFAULT_AUDIO_MODEL,
     speech: env.DEFAULT_SPEECH_MODEL,
   }
+
   const selected = value ?? configured[kind] ?? DEFAULTS[kind]
   const mapper = modelMapper(env)
+
   const model = Object.hasOwn(mapper, selected)
     ? (mapper[selected] ?? selected)
     : selected

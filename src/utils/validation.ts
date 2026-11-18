@@ -3,7 +3,6 @@ import { ApiError, invalid, unsupported } from './errors'
 import { streamToBuffer } from './stream'
 
 export const JSON_LIMIT = 2 * 1024 * 1024
-
 export const AUDIO_LIMIT = 25 * 1024 * 1024
 
 export function isObject(value: unknown): value is JsonObject {
@@ -118,6 +117,7 @@ export async function readJson(request: Request): Promise<JsonObject> {
   }
 
   const bytes = await readRequestBytes(request, JSON_LIMIT)
+
   let body: unknown
 
   try {

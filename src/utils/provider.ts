@@ -70,7 +70,9 @@ function providerError(
 
 function operationSignal(request: Request, timeout: number): ProviderOperation {
   const controller = new AbortController()
+
   let timedOut = false
+
   const abort = () => controller.abort(request.signal.reason)
 
   request.signal.addEventListener('abort', abort, { once: true })
@@ -134,9 +136,11 @@ function managedStream(
   operation: ProviderOperation
 ): ReadableStream<Uint8Array> {
   const reader = stream.getReader()
+
   let ended = false
   let released = false
   let onAbort: () => void
+
   const finish = () => {
     operation.dispose()
     operation.signal.removeEventListener('abort', onAbort)
@@ -234,7 +238,7 @@ async function providerFailure(response: Response): Promise<never> {
   try {
     body = await readProviderJson(response, 1024 * 1024)
   } catch {
-    /* Use a safe status-based error if the body is malformed. */
+    // Use a safe status-based error if the body is malformed.
   }
 
   const error = isObject(body) && isObject(body.error) ? body.error : undefined
