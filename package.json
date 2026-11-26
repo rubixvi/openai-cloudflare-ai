@@ -11,9 +11,9 @@
     "test": "tsc -p tsconfig.json --module nodenext --moduleResolution nodenext --target es2022 --rootDir src --outDir .test-dist --noEmit false && node --test test/audio.test.mjs test/routes.test.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.8",
-    "@types/node": "^26.6.6",
+    "@biomejs/biome": "^2.6.9",
+    "@types/node": "^26.6.10",
     "typescript": "^7.0.2",
-    "wrangler": "4.167.0"
+    "wrangler": "4.168.0"
   }
 }
